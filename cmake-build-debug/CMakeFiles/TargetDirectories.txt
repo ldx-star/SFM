@@ -1,0 +1,4 @@
+/media/ldx/sd1/ldx/learn/三维重建/项目2/cmake-build-debug/CMakeFiles/lib.dir
+/media/ldx/sd1/ldx/learn/三维重建/项目2/cmake-build-debug/CMakeFiles/SFM.dir
+/media/ldx/sd1/ldx/learn/三维重建/项目2/cmake-build-debug/CMakeFiles/edit_cache.dir
+/media/ldx/sd1/ldx/learn/三维重建/项目2/cmake-build-debug/CMakeFiles/rebuild_cache.dir
