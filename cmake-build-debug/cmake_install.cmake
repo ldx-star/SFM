@@ -1,4 +1,4 @@
-# Install script for directory: /media/ldx/sd1/ldx/learn/三维重建/项目2
+# Install script for directory: /media/ldx/sd1/ldx/learn/三维重建/项目
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -50,5 +50,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/media/ldx/sd1/ldx/learn/三维重建/项目2/cmake-build-debug/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/media/ldx/sd1/ldx/learn/三维重建/项目/cmake-build-debug/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")

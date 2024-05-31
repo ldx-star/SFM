@@ -11,8 +11,12 @@ Rebuild::Rebuild(const CommonView &commonView, const std::vector<Camera> &camera
     _cameras = cameras;
     _blog = blog;
     _tracks_state.resize(commonView._tracks.size());
-    for(int i = 0;i < _tracks_state.size();i++){
+    for (int i = 0; i < _tracks_state.size(); i++) {
         _tracks_state[i] = false;
+    }
+    _cameras_state.resize(n + 1);
+    for (int i = 0; i < _cameras_state.size(); i++) {
+        _cameras_state[i] = false;
     }
     init();
 }
@@ -47,10 +51,8 @@ void Rebuild::init() {
 
     init_reconstruct(id1, id2, success_matches);
     this->save(blog->_points_dir);
-    bool *camera_state = new bool[images_num + 1]; //记录哪些相机可用
-    memset(camera_state, 0, sizeof camera_state[0] * (images_num + 1));
-    camera_state[id1] = true;
-    camera_state[id2] = true;
+    _cameras_state[id1] = true;
+    _cameras_state[id2] = true;
     bool flag = false;
     do {
         this->save(blog->_points_dir);
@@ -68,12 +70,12 @@ void Rebuild::init() {
         }
         int max_val = 0, max_id = 0;
         for (int i = 1; i <= images_num; i++) {
-            if (views[i] > max_val && camera_state[i] == false) {
+            if (views[i] > max_val && _cameras_state[i] == false) {
                 max_id = i;
                 max_val = views[i];
             }
         }
-        camera_state[max_id] = true;
+        _cameras_state[max_id] = true;
         /** 用ePnP求解相机(max_id)的外参 **/
         // 建立3D-2D匹配点
         std::vector<Eigen::Vector3d> p3ds;
@@ -83,7 +85,7 @@ void Rebuild::init() {
             for (auto e: tracks[track]) {
                 int id = e.first;
                 int kp_id = e.second;
-                if(id == max_id){
+                if (id == max_id) {
                     Eigen::Vector3d p3d = _points_cloud[i];
                     Eigen::Vector2d p2d;
                     p2d(0) = graph[max_id].keyPoints[kp_id].pt.x;
@@ -93,24 +95,29 @@ void Rebuild::init() {
                 }
             }
         }
-        ePnP(p3ds,p2ds,cameras[max_id]);
+        ePnP(p3ds, p2ds, cameras[max_id]);
         /**用max_id与其他可用相机进行重建**/
-        for(int i = 1; i <= images_num; i++){
+        for (int i = 1; i <= images_num; i++) {
             id1 = i;
             id2 = max_id;
-            if(id1 > id2){
+            if (id1 > id2) {
                 int tmp = id1;
                 id1 = id2;
                 id2 = tmp;
             }
 
-            if(camera_state[i] && graph[id1].edges[id2].flag == true){
+            if (_cameras_state[i] && graph[id1].edges[id2].flag == true) {
                 success_matches = get_success_matches(id1, id2);
-                if(success_matches.size() > 100) {
+                if (success_matches.size() > 100) {
                     reconstruct(max_id, i, success_matches);
                     flag = true;
                 }
             }
+        }
+
+        /**捆绑调整**/
+        if (flag) {
+
         }
     } while (flag);
 }
@@ -391,7 +398,8 @@ Rebuild::init_reconstruct(int id1, int id2, const std::vector<cv::DMatch> &succe
         id1 = id2;
         id2 = tmp;
     }
-    std::cout << ("=========重建 " + std::to_string(id1) + " " + std::to_string(id2) + " " + std::to_string(success_matches.size()) + "=============") << std::endl;
+    std::cout << ("=========重建 " + std::to_string(id1) + " " + std::to_string(id2) + " " + std::to_string(success_matches.size()) + "=============")
+              << std::endl;
 
     _blog->write("=========重建 " + std::to_string(id1) + " " + std::to_string(id2) + " " + std::to_string(success_matches.size()) + "=============");
 
@@ -609,9 +617,10 @@ Rebuild::reconstruct(int id1, int id2, const std::vector<cv::DMatch> &success_ma
         id1 = id2;
         id2 = tmp;
     }
-    std::cout << ("=========重建 " + std::to_string(id1) + " " + std::to_string(id2) + " " + std::to_string(success_matches.size()) + "=============") << std::endl;
+    std::cout << ("=========重建 " + std::to_string(id1) + " " + std::to_string(id2) + " " + std::to_string(success_matches.size()) + "=============")
+              << std::endl;
 
-    _blog->write("=========重建 " + std::to_string(id1) + " " + std::to_string(id2) +" " + std::to_string(success_matches.size())+ "=============");
+    _blog->write("=========重建 " + std::to_string(id1) + " " + std::to_string(id2) + " " + std::to_string(success_matches.size()) + "=============");
 
 
     auto &commonView = _commonView;
@@ -917,3 +926,253 @@ double Rebuild::reProjErr(const Eigen::Vector3d &p3d, const Eigen::Vector3d &p2d
     double err = sqrt(pow(p2d(0) - rePoint(0), 2) + pow(p2d(1) - rePoint(1), 2));
     return err;
 }
+
+void Rebuild::bundle_adjustment() {
+    const std::vector<std::list<std::pair<int, int>>> &tracks = _commonView._tracks;
+    const std::vector<Node> &graph = _commonView._graph;
+
+    std::vector<int> available_cameras;
+    for (int i = 1; i <= _images_num; i++) {
+        if (_cameras_state[i]) {
+            available_cameras.push_back(i);
+        }
+    }
+    //建立三维点、二维点和相机的对应关系
+    std::vector<std::vector<Eigen::Vector3d>> c_p3ds(_images_num + 1);
+    std::vector<std::vector<Eigen::Vector3d>> c_p2ds(_images_num + 1);
+    for (int i = 0; i < _points_cloud.size(); i++) {
+        int track = _points_state[i];
+        for (auto e: tracks[track]) {
+            int cam_id = e.first;
+            int kp_id = e.second;
+            Eigen::Vector3d p3d = _points_cloud[i];
+            Eigen::Vector3d p2d;
+            p2d(0) = graph[cam_id].keyPoints[kp_id].pt.x;
+            p2d(1) = graph[cam_id].keyPoints[kp_id].pt.y;
+            p2d(2) = 1;
+            c_p3ds[cam_id].push_back(p3d);
+            c_p2ds[cam_id].push_back(p2d);
+        }
+    }
+//    // 根据available_cameras的顺序重新排列三维点和二维点
+//    std::vector<Eigen::Vector3d> p3ds;
+//    std::vector<Eigen::Vector2d> p2ds;
+//    for(int i = 0; i < available_cameras.size();i++){
+//        int cam_id = available_cameras[i];
+//        for(int j = 0; j < c_p3ds[cam_id].size();j++){
+//            p3ds.push_back(c_p3ds[cam_id][j]);
+//            p2ds.push_back(c_p2ds[cam_id][j]);
+//        }
+//    }
+
+    // 计算重投影误差
+    std::vector<double> F;
+    for (int i = 0; i < available_cameras.size(); i++) {
+        int cam_id = available_cameras[i];
+        for (int j = 0; j < c_p3ds[i].size(); j++) {
+            Eigen::Vector3d p3d = c_p3ds[cam_id][j];
+            Eigen::Vector3d p2d = c_p2ds[cam_id][j];
+            reProjErr_bj(p3d, p2d, _cameras[cam_id], F);
+        }
+    }
+    double mse = compute_mse(F);
+    double final_mse, init_mse;
+    final_mse = init_mse = mse;
+
+    /**Levenberg-Marquard 算法**/
+    int lm_max_iterations = 100;
+    for (int lm_iter = 0; lm_iter < lm_max_iterations; lm_iter++) {
+        // 1、计算雅可比矩阵
+        Eigen::MatrixXd Jc, Jp;
+        analytic_jacobian(Jc, Jp, c_p3ds, c_p2ds, available_cameras);
+
+        // 2、高斯牛顿法求解
+        Eigen::MatrixXd delta = my_solve_schur(Jc,Jp,F,available_cameras);
+
+    }
+
+}
+
+void Rebuild::reProjErr_bj(const Eigen::Vector3d &p3d, const Eigen::Vector3d &p2d, const Camera &camera, std::vector<double> &F) {
+    Eigen::Matrix3d R = camera._R;
+    Eigen::Matrix3d K = camera._K;
+    Eigen::Vector3d t = camera._t;
+    Eigen::Vector3d rePoint = K * (R * p3d + t);
+    rePoint(0) /= rePoint(2);
+    rePoint(1) /= rePoint(2);
+    rePoint(2) /= rePoint(2);
+
+    F.push_back(p2d(0) - rePoint(0));
+    F.push_back(p2d(1) - rePoint(1));
+}
+
+double Rebuild::compute_mse(const std::vector<double> &F) {
+    double mse = 0.0;
+    for (int i = 0; i < F.size(); i++) {
+        mse += F[i] * F[i];
+    }
+    return mse / (F.size() / 2.0);
+}
+
+void Rebuild::analytic_jacobian(Eigen::MatrixXd &Jc, Eigen::MatrixXd &Jp, const std::vector<std::vector<Eigen::Vector3d>> &c_p3ds,
+                                const std::vector<std::vector<Eigen::Vector3d>> &c_p2ds, std::vector<int> available_cameras) {
+    int Jc_row = 0, Jp_row = 0;
+    int observations_size = 0;
+    for (int i = 0; i < available_cameras.size(); i++) {
+        observations_size += c_p3ds[available_cameras[i]].size();
+    }
+    Jc_row = Jp_row = observations_size * 2;
+    Jc.resize(Jc_row, 16);
+    Jp.resize(Jp_row, 3);
+
+    double cam_x_ptr[16], cam_y_ptr[16], point_x_ptr[3], point_y_ptr[3];
+
+    int j = 0;
+    for (int i = 0; i < available_cameras.size(); i++) {
+        int cam_id = available_cameras[i];
+        Camera cam = _cameras[cam_id];
+        for (; j < c_p3ds[cam_id].size(); j++) {
+            Eigen::Vector3d p3d = c_p3ds[cam_id][j];
+            my_jacobian(cam, p3d, cam_x_ptr, cam_y_ptr, point_x_ptr, point_y_ptr);
+            for(int k = 0; k < 16;k++){
+                Jc(j,k) = cam_x_ptr[k];
+            }
+            for(int k = 0; k < 3;k++){
+                Jp(j,k) = point_x_ptr[k];
+            }
+            j++;
+            for(int k = 0; k < 16;k++){
+                Jc(j,k) = cam_y_ptr[k];
+            }
+            for(int k = 0; k < 3;k++){
+                Jp(j,k) = point_y_ptr[k];
+            }
+        }
+    }
+}
+
+void
+Rebuild::my_jacobian(const Camera &cam, const Eigen::Vector3d &p3d, double *cam_x_ptr, double *cam_y_ptr, double *point_x_ptr, double *point_y_ptr) {
+    Eigen::Vector3d pc = cam._R * p3d + cam._t;
+
+    double xc = pc(0);
+    double yc = pc(1);
+    double zc = pc(2);
+    double fu = cam._K(0, 0);
+    double fv = cam._K(1, 1);
+    double uc = cam._K(0, 2);
+    double vc = cam._K(1, 2);
+    double t0 = cam._t(0);
+    double t1 = cam._t(1);
+    double t2 = cam._t(2);
+    double r0 = cam._R(0, 0);
+    double r1 = cam._R(0, 1);
+    double r2 = cam._R(0, 2);
+    double r3 = cam._R(1, 0);
+    double r4 = cam._R(1, 1);
+    double r5 = cam._R(1, 2);
+    double r6 = cam._R(2, 0);
+    double r7 = cam._R(2, 1);
+    double r8 = cam._R(2, 2);
+    double X = p3d(0);
+    double Y = p3d(1);
+    double Z = p3d(2);
+
+    cam_x_ptr[0] = xc / zc;
+    cam_x_ptr[1] = 0;
+    cam_x_ptr[2] = 1;
+    cam_x_ptr[3] = 0;
+    cam_x_ptr[4] = fu / zc;
+    cam_x_ptr[5] = 0;
+    cam_x_ptr[6] = -fu * xc / zc / zc;
+    cam_x_ptr[7] = fu / zc * X;
+    cam_x_ptr[8] = fu / zc * Y;
+    cam_x_ptr[9] = fu / zc * Z;
+    cam_x_ptr[10] = 0;
+    cam_x_ptr[11] = 0;
+    cam_x_ptr[12] = 0;
+    cam_x_ptr[13] = -fu * xc / zc / zc * X;
+    cam_x_ptr[14] = -fu * xc / zc / zc * Y;
+    cam_x_ptr[15] = -fu * xc / zc / zc * Z;
+
+    cam_y_ptr[0] = 0;
+    cam_y_ptr[1] = yc / zc;
+    cam_y_ptr[2] = 0;
+    cam_y_ptr[3] = 1;
+    cam_y_ptr[4] = 0;
+    cam_y_ptr[5] = fv / zc;
+    cam_y_ptr[6] = -fv * yc / zc / zc;
+    cam_y_ptr[7] = 0;
+    cam_y_ptr[8] = 0;
+    cam_y_ptr[9] = 0;
+    cam_y_ptr[10] = fv / zc * X;
+    cam_y_ptr[11] = fv / zc * Y;
+    cam_y_ptr[12] = fv / zc * Z;
+    cam_y_ptr[13] = -fv * yc / zc / zc * X;
+    cam_y_ptr[14] = -fv * yc / zc / zc * Y;
+    cam_y_ptr[15] = -fv * yc / zc / zc * Z;
+
+    point_x_ptr[0] = r0 * fu / zc - r6 * fu * xc / zc / zc;
+    point_x_ptr[1] = r1 * fu / zc - r7 * fu * xc / zc / zc;
+    point_x_ptr[2] = r2 * fu / zc - r8 * fu * xc / zc / zc;
+
+    point_y_ptr[0] = r3 * fv / zc - r6 * fv * yc / zc / zc;
+    point_y_ptr[1] = r4 * fv / zc - r7 * fv * yc / zc / zc;
+    point_y_ptr[2] = r5 * fv / zc - r8 * fv * yc / zc / zc;
+
+}
+
+Eigen::MatrixXd
+Rebuild::my_solve_schur(const Eigen::MatrixXd Jc, const Eigen::MatrixXd Jp, const std::vector<double> &F, const std::vector<int> &available_cameras) {
+    /**
+    *  雅可比矩阵：
+    *      J = [Jc Jp]
+    *
+    */
+    Eigen::MatrixXd J(Jc.rows(), Jc.cols() + Jp.cols());
+    Eigen::VectorXd err = Eigen::VectorXd::Zero(F.size());
+
+    for (int i = 0; i < F.size(); i++) {
+        err(i) = F[i];
+    }
+    J << Jc, Jp;
+    const Eigen::MatrixXd JT = J.transpose();
+    const Eigen::MatrixXd JTJ = JT * J;
+    Eigen::MatrixXd identity = Eigen::MatrixXd::Identity(JTJ.rows(), JTJ.rows());
+    identity *= 0.1;
+    /* B = JTJ + uI */
+    const Eigen::MatrixXd B = JTJ + identity;
+    const Eigen::MatrixXd inv_B = B.inverse();
+    const Eigen::MatrixXd E = -JT * err;
+    const Eigen::VectorXd delta = inv_B * E;
+    int j = 0;
+    for(int i = 0; i < available_cameras.size();i++){
+        //[fu,fv,u_c,v_c,t_0,t1,t2,r0,r1,r2,r3,r4,r5,r6,r7,r8]
+        int cam_id = available_cameras[i];
+        Camera &cam = _cameras[cam_id];
+        cam._K(0,0) += delta(j++);
+        cam._K(1,1) += delta(j++);
+        cam._K(0,2) += delta(j++);
+        cam._K(1,2) += delta(j++);
+        cam._t(0) += delta(j++);
+        cam._t(1) += delta(j++);
+        cam._t(2) += delta(j++);
+        cam._R(0,0) += delta(j++);
+        cam._R(0,1) += delta(j++);
+        cam._R(0,2) += delta(j++);
+        cam._R(1,0) += delta(j++);
+        cam._R(1,1) += delta(j++);
+        cam._R(1,2) += delta(j++);
+        cam._R(2,0) += delta(j++);
+        cam._R(2,1) += delta(j++);
+        cam._R(2,2) += delta(j++);
+    }
+    j = 0;
+    while (pointId < points_3d.size()) {
+        points_3d[pointId].pos[0] += delta(cameras.size() * num_cam_params + pointId * 3 + 0);
+        points_3d[pointId].pos[1] += delta(cameras.size() * num_cam_params + pointId * 3 + 1);
+        points_3d[pointId].pos[2] += delta(cameras.size() * num_cam_params + pointId * 3 + 2);
+        pointId++;
+    }
+}
+

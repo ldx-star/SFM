@@ -1,4 +1,4 @@
-/snap/clion/277/bin/cmake/linux/x64/bin/cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MAKE_PROGRAM=/snap/clion/277/bin/ninja/linux/x64/ninja -G Ninja -S /media/ldx/sd1/ldx/learn/三维重建/项目2 -B /media/ldx/sd1/ldx/learn/三维重建/项目2/cmake-build-debug
+/snap/clion/277/bin/cmake/linux/x64/bin/cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MAKE_PROGRAM=/snap/clion/277/bin/ninja/linux/x64/ninja -G Ninja -S /media/ldx/sd1/ldx/learn/三维重建/项目 -B /media/ldx/sd1/ldx/learn/三维重建/项目/cmake-build-debug
 -- The C compiler identification is GNU 9.4.0
 -- The CXX compiler identification is GNU 9.4.0
 -- Detecting C compiler ABI info
@@ -12,6 +12,6 @@
 -- Detecting CXX compile features
 -- Detecting CXX compile features - done
 -- Found OpenCV: /usr/local (found version "4.6.0") 
--- Configuring done (0.2s)
+-- Configuring done (0.3s)
 -- Generating done (0.0s)
--- Build files have been written to: /media/ldx/sd1/ldx/learn/三维重建/项目2/cmake-build-debug
+-- Build files have been written to: /media/ldx/sd1/ldx/learn/三维重建/项目/cmake-build-debug
