@@ -15,6 +15,7 @@
 #include <set>
 #include "../include/Blog.h"
 #include <sys/stat.h>
+#include <ceres/ceres.h>
 
 /***
  * 对两个视图进行重建
@@ -31,6 +32,13 @@ public:
     void save(std::string path);
 
     ~Rebuild() {};
+
+    struct observation{
+        int cam_id;
+        int p3d_id;
+        double p2d[2] ; //二维点坐标
+    };
+
 private:
 
     void init();
@@ -128,7 +136,7 @@ private:
      */
     void reProjErr_bj(const Eigen::Vector3d &p3d, const Eigen::Vector3d &p2d, const Camera &camera, std::vector<double> &F);
 
-    void bundle_adjustment();
+    void ceres_bundle_adjustment();
 
     /**
      * \description 计算均方误差
@@ -145,7 +153,7 @@ private:
      * @param c_p2ds
      * @param available_cameras
      */
-    void analytic_jacobian(Eigen::MatrixXd &Jc, Eigen::MatrixXd &Jp,const std::vector<std::vector<Eigen::Vector3d>> &c_p3ds,const std::vector< std::vector<Eigen::Vector3d>> &c_p2ds,std::vector<int> available_cameras);
+    void analytic_jacobian(Eigen::MatrixXd &Jc, Eigen::MatrixXd &Jp,const std::vector<Eigen::Vector3d> &p3ds,std::vector<int> available_cameras);
 
     /**
      * \求雅可比矩阵
@@ -164,7 +172,7 @@ private:
      * @param Jp 三维点雅可比矩阵
      * @param F y‘ - y
      */
-    Eigen::MatrixXd my_solve_schur(const Eigen::MatrixXd Jc, const Eigen::MatrixXd Jp, const std::vector<double> &F,const std::vector<int> &available_cameras);
+    Eigen::MatrixXd my_solve_schur(const Eigen::MatrixXd Jc, const Eigen::MatrixXd Jp, const std::vector<double> &F,const std::vector<int> &available_cameras,const std::vector<int> &available_points);
 public:
     CommonView _commonView;
     int _images_num;
@@ -173,6 +181,7 @@ public:
     std::vector<int> _points_state; // 记录每个三维点的track
     std::vector<bool> _tracks_state; // 每个track是否已经重建
     std::vector<bool> _cameras_state; // 每个相机是否已经获得参数
+    std::vector<observation> _observations; //
     Blog *_blog;
 };
 

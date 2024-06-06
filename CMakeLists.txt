@@ -10,6 +10,9 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 find_package(Eigen3 REQUIRED)
 include_directories(${EIGEN3_INCLUDE_DIRS})
 
+find_package(Ceres REQUIRED)
+include_directories(${CERES_INCLUDE_DIRS})
+
 
 add_executable(${PROJECT_NAME} main.cpp)
-target_link_libraries(${PROJECT_NAME} lib ${OpenCV_LIBS})
+target_link_libraries(${PROJECT_NAME} lib ${OpenCV_LIBS} ${CERES_LIBRARIES} )
